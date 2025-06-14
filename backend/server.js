@@ -70,45 +70,43 @@ app.post('/available-rooms', async (req, res) => {
 // Recieve and save booking data
 
 app.post('/bookings', async (req, res) => {
-	console.log('POST /bookings route hit');
+    console.log('POST /bookings route hit');
     console.log('Request body:', req.body);
 
-        try {
-            const { name, email, phone, room, checkIn, checkOut, persons } = req.body;
-    
-            if (!name || !email || !room || !checkIn || !checkOut || !persons) {
-                return res.status(400).json({ error: 'Missing required fields.' });
-            }
-    
-            // Check for overlapping bookings for this room
-            const overlapping = await Booking.findOne({
-                room,
-                checkInDate: { $lt: new Date(checkOut) },
-                checkOutDate: { $gt: new Date(checkIn) }
-            });
-    
-            if (overlapping) {
-                return res.status(409).json({ error: 'Room is already booked for these dates.' });
-            }
-    
-            // Create and save the booking
-            const booking = new Booking({
-                user: { name, email, phone },
-                room,
-                checkInDate: new Date(checkIn),
-                checkOutDate: new Date(checkOut),
-                persons,
-                status: 'confirmed'
-            });
-    
-            await booking.save();
-    
-            res.status(201).json({ message: 'Booking successful!', booking });
-        } catch (err) {
-            res.status(500).json({ error: 'Error creating booking: ' + err.message });
-        }
-    });
+    try {
+        const { name, email, phone, room, checkIn, checkOut, persons } = req.body;
 
+        if (!name || !email || !room || !checkIn || !checkOut || !persons) {
+            return res.status(400).json({ error: 'Missing required fields.' });
+        }
+
+        // Check for overlapping bookings for this room
+        const overlapping = await Booking.findOne({
+            room,
+            checkInDate: { $lt: new Date(checkOut) },
+            checkOutDate: { $gt: new Date(checkIn) }
+        });
+
+        if (overlapping) {
+            return res.status(409).json({ error: 'Room is already booked for these dates.' });
+        }
+
+        // Create and save the booking
+        const booking = new Booking({
+            user: { name, email, phone },
+            room,
+            checkInDate: new Date(checkIn),
+            checkOutDate: new Date(checkOut),
+            persons,
+            status: 'confirmed'
+        });
+
+        await booking.save();
+        res.status(201).json({ message: 'Booking successful!', booking });
+    } catch (err) {
+        res.status(500).json({ error: 'Error creating booking: ' + err.message });
+    }
+});
 
 
 // Test for getting all rooms in MongoDB
