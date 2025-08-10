@@ -11,4 +11,4 @@ const roomSchema = new mongoose.Schema({
 	availibility: {type: Boolean, default: true },
 	});
 
-module.exports = mongoose.model('room', roomSchema);
+module.exports = mongoose.model('Room', roomSchema);

@@ -41,7 +41,8 @@ app.get('/', (req, res) => {
 
 const cors = require('cors');
 app.use(cors());
-    
+
+
 // Endpoint /available-rooms 
 
 app.post('/available-rooms', async (req, res) => {
@@ -102,13 +103,55 @@ app.post('/bookings', async (req, res) => {
         });
 
         await booking.save();
-        res.status(201).json({ message: 'Booking successful!', booking });
+        res.status(201).json({ message: 'Booking successful ', booking });
     } catch (err) {
         res.status(500).json({ error: 'Error creating booking: ' + err.message });
     }
 });
 
+/*app.post('/bookings', async (req, res) => {
+    const { user, room, checkIn, checkOut, persons } = req.body;
+    let missingFields = [];
 
+    // Check for required fields
+    if (!user) {
+        missingFields.push('user');
+    } else {
+        if (!user.name) missingFields.push('user.name');
+        if (!user.email) missingFields.push('user.email');
+    }
+    if (!room) missingFields.push('room');
+    if (!checkIn) missingFields.push('checkIn');
+    if (!checkOut) missingFields.push('checkOut');
+    if (!persons) missingFields.push('persons');
+
+    // If any required field is missing, send a 400 response listing them
+    if (missingFields.length > 0) {
+        return res
+            .status(400)
+            .json({ error: 'Missing required fields: ' + missingFields.join(', ') });
+    }
+
+    // Continue processing if all required fields are present
+    try {
+        const booking = new Booking({
+            user,
+            room,
+            checkInDate: new Date(checkIn),
+            checkOutDate: new Date(checkOut),
+            persons,
+            status: 'confirmed'
+        });
+
+        await booking.save();
+
+        // Populate the room field with the actual room name before sending the response
+        await booking.populate('room', 'name');
+        res.status(201).json({ message: 'Booking successful', booking });
+    } catch (err) {
+        res.status(500).json({ error: 'Error creating booking: ' + err.message });
+    }
+});*/
 // Test for getting all rooms in MongoDB
 
 app.get('/rooms', async (req, res) => {
@@ -154,7 +197,60 @@ app.get('/tours', async (req, res) => {
         res.status(500).send('Error fetching tours: ' + err.message);
     }
 });
-        // Srtart the server
-        app.listen(PORT, () => {
-                console.log(`Server is running on http://localhost:${PORT}`);
-        });
+
+// Endpoint to fetch all bookings
+app.get('/bookings', async (req, res) => {
+    try {
+        const bookings = await Booking.find();
+        res.json(bookings);
+    } catch (err) {
+        res.status(500).json({ error: 'Error fetching bookings: ' + err.message });
+    }
+});
+
+
+// Import MongoDB client to connect to the database
+
+const { client } = require('./database.js')
+
+// Establish connection to the database
+
+async function connectToDatabase() {
+    if (!client.isConnected || !client.topology || !client.topology.isConnected()) {
+        await client.connect();
+        console.log('Connected to MongoDB via native driver');
+    } 
+
+    // Return the specific database we use
+
+    return client.db('moroccan_friends_house');
+
+}
+
+// Create a new endpoint for the dashboard to fetch booking data
+
+app.get('/dashboard/bookings', async (req, res) => {
+    try {
+
+        // Connect to the database using our finction
+        // const db = await connectToDatabase();
+
+        //Access the 'bookings' collection and query for all documents:
+        //the find() method returns a cursor; we call toArray to retrieve all documents as an array.
+
+        const bookings = await Booking.find().populate('room', 'name');
+
+        // send the booking data back to the client as JSON format 
+
+        res.json(bookings);
+
+    } catch (err) {
+        // if an error occurs, we catch it and notify the end user it's a server issue
+        res.status(500).json({ error: 'Failed to fetch bookings:' + err.message });
+    }
+})
+
+// Srtart the server
+app.listen(PORT, () => {
+        console.log(`Server is running on http://localhost:${PORT}`);
+});
