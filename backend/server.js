@@ -6,7 +6,38 @@ const mongoose = require('mongoose');
 const Room = require('./models/room.js');
 const Booking = require ('./models/bookings.js');
 const Dinner = require('./models/dinner.js');
+// JWT Authentication
+const jwt = require('jsonwebtoken');
+const SECRET_KEY = process.env.JWT_SECRET || "super-secret-key";
 
+// Token blacklist (in-memory for development)
+// In production, use Redis or another fast database
+const tokenBlacklist = new Set();
+
+// Clean up expired tokens from blacklist every hour
+setInterval(() => {
+    const initialSize = tokenBlacklist.size;
+    const tokensToRemove = [];
+    
+    // Identify expired tokens
+    tokenBlacklist.forEach(token => {
+        try {
+            jwt.verify(token, SECRET_KEY);
+        } catch (err) {
+            // Token is expired or invalid, safe to remove
+            tokensToRemove.push(token);
+        }
+    });
+    
+    // Remove expired tokens
+    tokensToRemove.forEach(token => {
+        tokenBlacklist.delete(token);
+    });
+    
+    if (initialSize !== tokenBlacklist.size) {
+        console.log(`Blacklist cleanup: removed ${initialSize - tokenBlacklist.size} expired tokens. Current size: ${tokenBlacklist.size}`);
+    }
+}, 3600000); // Run every hour
 
 
 const app = express();
@@ -16,6 +47,17 @@ const PORT = 5000;
 app.use(express.json());
 
 console.log('SERVER.JS STARTED');
+
+// Hardcoded data for testing
+
+const user = {
+    id: 1,
+    username: 'manager',
+  password: 'password123', // Use hash passwords in prod
+  role: 'manager',
+
+};
+
 
 // MongoDB connection
 mongoose.connect('mongodb://localhost:27017/moroccan_friends_house', {
@@ -109,49 +151,6 @@ app.post('/bookings', async (req, res) => {
     }
 });
 
-/*app.post('/bookings', async (req, res) => {
-    const { user, room, checkIn, checkOut, persons } = req.body;
-    let missingFields = [];
-
-    // Check for required fields
-    if (!user) {
-        missingFields.push('user');
-    } else {
-        if (!user.name) missingFields.push('user.name');
-        if (!user.email) missingFields.push('user.email');
-    }
-    if (!room) missingFields.push('room');
-    if (!checkIn) missingFields.push('checkIn');
-    if (!checkOut) missingFields.push('checkOut');
-    if (!persons) missingFields.push('persons');
-
-    // If any required field is missing, send a 400 response listing them
-    if (missingFields.length > 0) {
-        return res
-            .status(400)
-            .json({ error: 'Missing required fields: ' + missingFields.join(', ') });
-    }
-
-    // Continue processing if all required fields are present
-    try {
-        const booking = new Booking({
-            user,
-            room,
-            checkInDate: new Date(checkIn),
-            checkOutDate: new Date(checkOut),
-            persons,
-            status: 'confirmed'
-        });
-
-        await booking.save();
-
-        // Populate the room field with the actual room name before sending the response
-        await booking.populate('room', 'name');
-        res.status(201).json({ message: 'Booking successful', booking });
-    } catch (err) {
-        res.status(500).json({ error: 'Error creating booking: ' + err.message });
-    }
-});*/
 // Test for getting all rooms in MongoDB
 
 app.get('/rooms', async (req, res) => {
@@ -227,30 +226,88 @@ async function connectToDatabase() {
 
 }
 
-// Create a new endpoint for the dashboard to fetch booking data
 
+// LOGIN Endpoint for JWT authentication
+
+app.post('/login', (req, res) => {
+
+    const { username, password } = req.body;
+
+    // Verify that credentials match the dummy user 
+
+    if ( username === user.username && password === user.password) {
+
+            // Create a payload with user information
+        const payload = {
+            id: user.id,
+            username: user.username,
+            role: user.role
+          };
+
+
+          // Sign the token with the SECRET_KEY and set an expiration date
+          const token = jwt.sign(payload, SECRET_KEY, { expiresIn: '15m'});     
+          
+          // Return the token to the client
+          return res.json({ token });
+
+    } else {
+        // Authentication failed
+        return res.status(401).json({ error: 'Invalid credentials' });
+    }
+});
+
+
+
+
+// Protect the /dashboard/bookings endpoint with the authenticateToken middleware
 app.get('/dashboard/bookings', async (req, res) => {
     try {
+        const authHeader = req.headers['authorization']; // Extract the Authorization header
+        const token = authHeader && authHeader.split(' ')[1]; // Extract token from 'Bearer <token>'
 
-        // Connect to the database using our finction
-        // const db = await connectToDatabase();
+        if (!token) {
+            return res.status(401).json({ error: 'Access denied. No token provided.' });
+        }
+        
+        // Check if token is in blacklist
+        if (tokenBlacklist.has(token)) {
+            return res.status(403).json({ error: 'Token has been invalidated. Please log in again.' });
+        }
 
-        //Access the 'bookings' collection and query for all documents:
-        //the find() method returns a cursor; we call toArray to retrieve all documents as an array.
+        jwt.verify(token, SECRET_KEY, async (err, user) => {
+            if (err) {
+                return res.status(403).json({ error: 'Invalid or expired token.' });
+            }
+            req.user = user; // Attach the decoded user payload to the request object
 
-        const bookings = await Booking.find().populate('room', 'name');
-
-        // send the booking data back to the client as JSON format 
-
-        res.json(bookings);
-
+            const bookings = await Booking.find().populate('room', 'name');
+            res.json(bookings);
+        });
     } catch (err) {
-        // if an error occurs, we catch it and notify the end user it's a server issue
-        res.status(500).json({ error: 'Failed to fetch bookings:' + err.message });
+        res.status(500).json({ error: 'Failed to fetch bookings: ' + err.message });
     }
 })
 
-// Srtart the server
+
+// Logout endpoint - invalidates the token by adding it to the blacklist
+app.post('/logout', (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) {
+        return res.status(400).json({ message: 'Token not provided' });
+    }
+    
+    // Add token to blacklist
+    tokenBlacklist.add(token);
+    
+    console.log(`Token added to blacklist. Blacklist size: ${tokenBlacklist.size}`);
+    return res.status(200).json({ message: 'Logged out successfully' });
+});
+
+
+// Start the server
 app.listen(PORT, () => {
         console.log(`Server is running on http://localhost:${PORT}`);
 });

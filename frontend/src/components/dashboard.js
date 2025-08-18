@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 function Dashboard() {
     const [bookings, setBookings] = useState([]);
@@ -7,9 +8,16 @@ function Dashboard() {
     const [statusFilter, setStatusFilter] = useState(''); // for example, "confirmed"
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const navigate = useNavigate();
 
     useEffect(() => {
-        fetch('http://localhost:5000/dashboard/bookings')
+        const token = localStorage.getItem('token');
+        
+        fetch('http://localhost:5000/dashboard/bookings', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        })
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
@@ -23,6 +31,15 @@ function Dashboard() {
                 setError(err.message);
             });
     }, []);
+
+    // Logging current user out
+    const handleLogout = () => {
+        // Remove the token from local storage
+        localStorage.removeItem('token');
+
+        // redirect the user to the login page
+        navigate('/login');
+    };
 
     // Filtering the bookings based on searchTerm and statusFilter.
     const filteredBookings = bookings.filter(booking => {
@@ -46,7 +63,24 @@ function Dashboard() {
 
     return (
         <div style={{ padding: '2rem', fontFamily: 'Arial, sans-serif' }}>
-            <h1>Bookings Dashboard</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h1>Bookings Dashboard</h1>
+                <button 
+                    onClick={handleLogout}
+                    style={{
+                        backgroundColor: '#f44336',
+                        color: 'white',
+                        padding: '8px 16px',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontFamily: 'Arial, sans-serif'
+                    }}
+                >
+                    Logout
+                </button>
+            </div>
+            
             <div>
                 {/* Search input */}
                 <input 
@@ -108,8 +142,6 @@ function Dashboard() {
             )}
         </div>
     );
-
-   
 }
 
 export default Dashboard;
