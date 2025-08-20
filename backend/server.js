@@ -290,6 +290,79 @@ app.get('/dashboard/bookings', async (req, res) => {
 })
 
 
+// PUT endpoint to update booking status - improved with better debug logging
+app.put('/bookings/:id/status', async (req, res) => {
+    console.log(`PUT /bookings/${req.params.id}/status route hit`);
+    console.log('Request body:', req.body);
+    console.log('Headers:', req.headers);
+    
+    try {
+        // Extract authentication header
+        const authHeader = req.headers['authorization']; 
+        const token = authHeader && authHeader.split(' ')[1];
+        
+        if (!token) {
+            console.log('No token provided');
+            return res.status(401).json({ error: 'Access denied. No token provided.' });
+        }
+        
+        // Check if token is blacklisted
+        if (tokenBlacklist.has(token)) {
+            console.log('Token is blacklisted');
+            return res.status(403).json({ error: 'Token has been invalidated.' });
+        }
+        
+        // Verify the token
+        jwt.verify(token, SECRET_KEY, async (err, user) => {
+            if (err) {
+                console.log('Token verification failed:', err.message);
+                return res.status(403).json({ error: 'Invalid or expired token.' });
+            }
+            
+            const { id } = req.params;
+            const { status } = req.body;
+            
+            console.log(`Updating booking ${id} status to: ${status}`);
+            
+            // Validate status
+            const validStatuses = ['confirmed', 'checked-in', 'checked-out', 'cancelled', 'no-show'];
+            if (!validStatuses.includes(status)) {
+                console.log('Invalid status:', status);
+                return res.status(400).json({ error: 'Invalid status value' });
+            }
+            
+            try {
+                // Ensure id is a valid MongoDB ObjectId
+                if (!mongoose.Types.ObjectId.isValid(id)) {
+                    console.log('Invalid MongoDB ObjectId:', id);
+                    return res.status(400).json({ error: 'Invalid booking ID format' });
+                }
+                
+                // Find and update the booking
+                const booking = await Booking.findByIdAndUpdate(
+                    id,
+                    { status: status },
+                    { new: true } // Return the updated document
+                ).populate('room', 'name');
+                
+                if (!booking) {
+                    console.log('Booking not found with id:', id);
+                    return res.status(404).json({ error: 'Booking not found' });
+                }
+                
+                console.log(`Booking updated successfully: ${booking._id}`);
+                return res.json(booking);
+            } catch (dbErr) {
+                console.error('Database error:', dbErr);
+                return res.status(500).json({ error: 'Database error: ' + dbErr.message });
+            }
+        });
+    } catch (err) {
+        console.error('Error updating booking status:', err);
+        res.status(500).json({ error: 'Error updating booking status: ' + err.message });
+    }
+});
+
 // Logout endpoint - invalidates the token by adding it to the blacklist
 app.post('/logout', (req, res) => {
     const authHeader = req.headers['authorization'];
