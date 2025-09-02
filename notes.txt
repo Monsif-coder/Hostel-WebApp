@@ -1,0 +1,26 @@
+## Email System Documentation
+
+### Overview
+The booking system now includes email notifications to users when they create a booking. The system uses SendGrid as the email delivery service.
+
+### Setup Instructions
+1. Create a SendGrid account and obtain an API key
+2. Create a `.env` file in the project root with: 
+   `SENDGRID_API_KEY=your_api_key_here`
+3. Verify a sender domain or email in SendGrid
+
+### Features
+- Email confirmation sent upon successful booking
+- Magic link for viewing reservation details
+- Sandbox mode for testing without sending real emails
+- Detailed error logging and handling
+
+### Testing
+- Use `node test-email.js` to test basic email functionality
+- Use `node test-booking-endpoint.js` to test the booking flow with email
+- Set `sandbox: true` in email parameters to prevent real emails from being sent
+
+### Troubleshooting
+- Check server logs for SendGrid API responses
+- Verify the API key is properly loaded from environment variables
+- Ensure the sender email is properly verified in SendGrid
