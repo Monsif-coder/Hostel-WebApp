@@ -1,5 +1,7 @@
-// filepath: /home/monsif/Desktop/Moroccan-friends-house/backend/server.js
+// Load environment variables at the beginning
+require('dotenv').config();
 
+console.log('SERVER.JS STARTED');
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -9,6 +11,10 @@ const Dinner = require('./models/dinner.js');
 // JWT Authentication
 const jwt = require('jsonwebtoken');
 const SECRET_KEY = process.env.JWT_SECRET || "super-secret-key";
+
+// SendGrid for confirmation link
+const { sendEmail } = require('./services/email-sender');
+
 
 // Token blacklist (in-memory for development)
 // In production, use Redis or another fast database
@@ -122,30 +128,55 @@ app.post('/bookings', async (req, res) => {
         if (!name || !email || !room || !checkIn || !checkOut || !persons) {
             return res.status(400).json({ error: 'Missing required fields.' });
         }
+        // Normalize check-in/check-out to UTC day boundaries
+        const inUTC = new Date(checkIn);
+        inUTC.setUTCHours(0, 0, 0, 0);
+        const outUTC = new Date(checkOut);
+        outUTC.setUTCHours(23, 59, 59, 999);
 
         // Check for overlapping bookings for this room
         const overlapping = await Booking.findOne({
             room,
-            checkInDate: { $lt: new Date(checkOut) },
-            checkOutDate: { $gt: new Date(checkIn) }
+            checkInDate: { $lt: outUTC },
+            checkOutDate: { $gt: inUTC }
         });
 
         if (overlapping) {
             return res.status(409).json({ error: 'Room is already booked for these dates.' });
         }
-
-        // Create and save the booking
+        // Create and save the booking using UTC-normalized dates
         const booking = new Booking({
             user: { name, email, phone },
             room,
-            checkInDate: new Date(checkIn),
-            checkOutDate: new Date(checkOut),
+            checkInDate: inUTC,
+            checkOutDate: outUTC,
             persons,
             status: 'confirmed'
         });
 
+        // Save booking
         await booking.save();
-        res.status(201).json({ message: 'Booking successful ', booking });
+
+        // Generate a view token (magic link) for the guest
+        const viewToken = jwt.sign({ bookingId: booking._id }, SECRET_KEY, { expiresIn: '24h' });
+        const link = `https://yourapp.com/reservations/view?token=${viewToken}`;
+
+        // Send confirmation email asynchronously with sandbox mode
+        console.log('Attempting to send booking confirmation email...');
+        try {
+          await sendEmail({
+            to: email,
+            subject: 'Your Booking Confirmation',
+            html: `<p>Thanks for booking! <a href=\"${link}\">View My Reservation</a></p>`,
+            sandbox: true // Enable sandbox mode for testing
+          });
+          console.log('Email processed successfully');
+        } catch (err) {
+          console.error('Failed to send booking email:', err);
+        }
+
+        // Return response to client
+        return res.status(201).json({ message: 'Booking successful', booking });
     } catch (err) {
         res.status(500).json({ error: 'Error creating booking: ' + err.message });
     }
@@ -380,7 +411,60 @@ app.post('/logout', (req, res) => {
 });
 
 
+// PUT endpoint to update any booking (admin only)
+app.put('/dashboard/bookings/:id', async (req, res) => {
+  // Authenticate and authorize
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+  if (tokenBlacklist.has(token)) return res.status(403).json({ error: 'Token invalidated.' });
+
+  jwt.verify(token, SECRET_KEY, async (err, user) => {
+    if (err || user.role !== 'manager') {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+    const { id } = req.params;
+    const updates = req.body;
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid booking ID.' });
+      }
+      const booking = await Booking.findByIdAndUpdate(id, updates, { new: true }).populate('room', 'name');
+      if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+      res.json(booking);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+});
+
+// DELETE endpoint to remove a booking (admin only)
+app.delete('/dashboard/bookings/:id', async (req, res) => {
+  // Authenticate and authorize
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+  if (tokenBlacklist.has(token)) return res.status(403).json({ error: 'Token invalidated.' });
+
+  jwt.verify(token, SECRET_KEY, async (err, user) => {
+    if (err || user.role !== 'manager') {
+      return res.status(403).json({ error: 'Forbidden.' });
+    }
+    const { id } = req.params;
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid booking ID.' });
+      }
+      const booking = await Booking.findByIdAndDelete(id);
+      if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+      res.json({ message: 'Booking deleted successfully.' });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+});
+
 // Start the server
 app.listen(PORT, () => {
-        console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
