@@ -1,8 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { VisitorsAreaChart } from './VisitorsAreaChart';
+import { BookingStats } from './BookingStats';
+import './Dashboard.css';
 
-function Dashboard() {
-    const [bookings, setBookings] = useState([]);
+function Das                {/* Search box */}
+                <div className="search-container">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="search-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                    </svg>
+                    <input 
+                        type="text" 
+                        placeholder="Search by name, email, or phone..." 
+                        value={searchTerm} 
+                        onChange={(e) => setSearchTerm(e.target.value)} 
+                        className="filter-input search-input"
+                        style={{
+                            minWidth: '250px'
+                        }}
+                    />
+                </div>  const [bookings, setBookings] = useState([]);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState(''); // for example, "confirmed"
@@ -192,9 +209,9 @@ function Dashboard() {
     
 
     return (
-        <div style={{ padding: '2rem', fontFamily: 'Arial, sans-serif' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h1>Bookings Dashboard</h1>
+        <div className="dashboard-container">
+            <div className="dashboard-header">
+                <h1 className="dashboard-title">Bookings Dashboard</h1>
                 <button 
                     onClick={handleLogout}
                     style={{
@@ -203,45 +220,31 @@ function Dashboard() {
                         padding: '8px 16px',
                         border: 'none',
                         borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontFamily: 'Arial, sans-serif'
+                        cursor: 'pointer'
                     }}
                 >
                     Logout
                 </button>
             </div>
+            
+            {/* Analytics Section */}
+            <div className="analytics-section">
+                <h2 className="section-title">Analytics Overview</h2>
+                <BookingStats />
+            </div>
+            
+            <div className="analytics-section">
+                <VisitorsAreaChart />
+            </div>
+            
+            <h2 className="section-title">Booking Management</h2>
 
             {/* Notification display */}
             {notification.message && (
-                <div style={{
-                    padding: '10px 20px',
-                    marginBottom: '15px',
-                    borderRadius: '4px',
-                    backgroundColor: notification.type === 'error' ? '#FFEBEE' : '#E8F5E9',
-                    color: notification.type === 'error' ? '#B71C1C' : '#1B5E20',
-                    border: `1px solid ${notification.type === 'error' ? '#EF9A9A' : '#A5D6A7'}`,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                }}>
-                    <span style={{ fontWeight: '500' }}>{notification.message}</span>
-                    <button 
-                        onClick={() => setNotification({ message: '', type: '' })}
-                        style={{
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                            color: notification.type === 'error' ? '#B71C1C' : '#1B5E20'
-                        }}
-                    >
-                        ✕
-                    </button>
+                <div className={`notification ${notification.type === 'Success' ? 'notification-success' : 'notification-error'}`}>
+                    {notification.message}
                 </div>
-            )}
-            
-            <div style={{
+            )}            <div style={{
                 backgroundColor: '#f5f5f5',
                 padding: '15px',
                 borderRadius: '8px',
@@ -252,29 +255,27 @@ function Dashboard() {
                 gap: '10px',
                 alignItems: 'center'
             }}>
-                {/* Search input */}
-                <input 
-                    type="text" 
-                    placeholder="Search by user or room" 
-                    value={searchTerm} 
-                    onChange={(e) => setSearchTerm(e.target.value)} 
-                    style={{
-                        padding: '8px',
-                        borderRadius: '4px',
-                        border: '1px solid #ddd',
-                        minWidth: '200px'
-                    }}
-                />
+                {/* Search input with icon */}
+                <div className="search-container">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="search-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                    </svg>
+                    <input 
+                        type="text" 
+                        placeholder="Search by user or room" 
+                        value={searchTerm} 
+                        onChange={(e) => setSearchTerm(e.target.value)} 
+                        className="filter-input search-input"
+                        style={{
+                            minWidth: '250px'
+                        }}
+                    />
+                </div>
                 {/* Status filter */}
                 <select 
                     value={statusFilter} 
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    style={{
-                        padding: '8px',
-                        borderRadius: '4px',
-                        border: '1px solid #ddd',
-                        backgroundColor: 'white'
-                    }}
+                    className="filter-input"
                 >
                     <option value="">All Statuses</option>
                     <option value="confirmed">Confirmed</option>
@@ -290,22 +291,14 @@ function Dashboard() {
                         type="date" 
                         value={startDate} 
                         onChange={(e) => setStartDate(e.target.value)} 
-                        style={{
-                            padding: '8px',
-                            borderRadius: '4px',
-                            border: '1px solid #ddd'
-                        }}
+                        className="filter-input"
                     />
                     <label style={{ fontWeight: '500' }}>To:</label>
                     <input 
                         type="date" 
                         value={endDate} 
                         onChange={(e) => setEndDate(e.target.value)} 
-                        style={{
-                            padding: '8px',
-                            borderRadius: '4px',
-                            border: '1px solid #ddd'
-                        }}
+                        className="filter-input"
                     />
                 </div>
             </div>
@@ -425,12 +418,7 @@ function Dashboard() {
                                             <select 
                                                 value={booking.status}
                                                 onChange={(e) => handleStatusChange(booking._id, e.target.value)}
-                                                style={{
-                                                    padding: '6px',
-                                                    border: '1px solid #ccc',
-                                                    borderRadius: '4px',
-                                                    backgroundColor: '#f9f9f9'
-                                                }}
+                                                className="filter-input"
                                             >
                                                 <option value="confirmed">Confirmed</option>
                                                 <option value="checked-in">Checked In</option>
