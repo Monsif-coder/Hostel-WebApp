@@ -219,7 +219,7 @@ function Dashboard() {
                 <BookingStats />
             </div>
             
-            <div className="analytics-section">
+            <div className="analytics-section full-width" style={{ overflow: 'hidden' }}>
                 <VisitorsAreaChart />
             </div>
             
