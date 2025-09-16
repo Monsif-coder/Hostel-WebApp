@@ -11,6 +11,10 @@ const Dinner = require('./models/dinner.js');
 // JWT Authentication
 const jwt = require('jsonwebtoken');
 const SECRET_KEY = process.env.JWT_SECRET || "super-secret-key";
+const bcrypt = require('bcrypt');
+const User = require('./models/user');
+const ACCESS_TOKEN_EXP = '15m';
+const REFRESH_TOKEN_EXP = '7d';
 
 // SendGrid for confirmation link
 const { sendEmail } = require('./services/email-sender');
@@ -54,15 +58,7 @@ app.use(express.json());
 
 console.log('SERVER.JS STARTED');
 
-// Hardcoded data for testing
-
-const user = {
-    id: 1,
-    username: 'manager',
-  password: 'password123', // Use hash passwords in prod
-  role: 'manager',
-
-};
+// For backwards compatibility keep existing behavior when no users exist
 
 
 // MongoDB connection
@@ -260,31 +256,86 @@ async function connectToDatabase() {
 
 // LOGIN Endpoint for JWT authentication
 
-app.post('/login', (req, res) => {
+// New auth endpoints
+app.post('/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Missing credentials' });
 
-    const { username, password } = req.body;
+    try {
+        const user = await User.findOne({ email });
+        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // Verify that credentials match the dummy user 
+        const match = await bcrypt.compare(password, user.passwordHash);
+        if (!match) return res.status(401).json({ error: 'Invalid credentials' });
 
-    if ( username === user.username && password === user.password) {
+        const payload = { id: user._id, role: user.role, hostelId: user.hostelId };
+        const accessToken = jwt.sign(payload, SECRET_KEY, { expiresIn: ACCESS_TOKEN_EXP });
+        const refreshToken = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: REFRESH_TOKEN_EXP });
 
-            // Create a payload with user information
-        const payload = {
-            id: user.id,
-            username: user.username,
-            role: user.role
-          };
+        // Store refresh token server-side for revocation
+        user.refreshTokens = user.refreshTokens || [];
+        user.refreshTokens.push(refreshToken);
+        await user.save();
 
+        // Return tokens. In production set refresh token as HttpOnly cookie.
+        return res.json({ accessToken, refreshToken, user: { id: user._id, role: user.role, hostelId: user.hostelId } });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
 
-          // Sign the token with the SECRET_KEY and set an expiration date
-          const token = jwt.sign(payload, SECRET_KEY, { expiresIn: '15m'});     
-          
-          // Return the token to the client
-          return res.json({ token });
+app.post('/auth/refresh', async (req, res) => {
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(400).json({ error: 'Missing refresh token' });
 
-    } else {
-        // Authentication failed
-        return res.status(401).json({ error: 'Invalid credentials' });
+    try {
+        const decoded = jwt.verify(refreshToken, SECRET_KEY);
+        const user = await User.findById(decoded.id);
+        if (!user) return res.status(401).json({ error: 'Invalid refresh token' });
+        if (!user.refreshTokens || !user.refreshTokens.includes(refreshToken)) return res.status(401).json({ error: 'Refresh token revoked' });
+
+        // rotate refresh token
+        const newRefresh = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: REFRESH_TOKEN_EXP });
+        user.refreshTokens = user.refreshTokens.filter(t => t !== refreshToken);
+        user.refreshTokens.push(newRefresh);
+        await user.save();
+
+        const payload = { id: user._id, role: user.role, hostelId: user.hostelId };
+        const accessToken = jwt.sign(payload, SECRET_KEY, { expiresIn: ACCESS_TOKEN_EXP });
+        return res.json({ accessToken, refreshToken: newRefresh });
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+});
+
+app.post('/auth/logout', async (req, res) => {
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(400).json({ error: 'Missing refresh token' });
+    try {
+        const decoded = jwt.verify(refreshToken, SECRET_KEY);
+        const user = await User.findById(decoded.id);
+        if (user) {
+            user.refreshTokens = (user.refreshTokens || []).filter(t => t !== refreshToken);
+            await user.save();
+        }
+        return res.json({ message: 'Logged out' });
+    } catch (err) {
+        return res.status(400).json({ error: 'Invalid refresh token' });
+    }
+});
+
+// GET current user
+app.get('/auth/me', async (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token provided' });
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        const user = await User.findById(decoded.id).select('-passwordHash -refreshTokens');
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        return res.json({ user });
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
     }
 });
 
@@ -343,8 +394,8 @@ app.put('/bookings/:id/status', async (req, res) => {
             return res.status(403).json({ error: 'Token has been invalidated.' });
         }
         
-        // Verify the token
-        jwt.verify(token, SECRET_KEY, async (err, user) => {
+    // Verify the token
+    jwt.verify(token, SECRET_KEY, async (err, user) => {
             if (err) {
                 console.log('Token verification failed:', err.message);
                 return res.status(403).json({ error: 'Invalid or expired token.' });
@@ -362,19 +413,37 @@ app.put('/bookings/:id/status', async (req, res) => {
                 return res.status(400).json({ error: 'Invalid status value' });
             }
             
-            try {
+                try {
                 // Ensure id is a valid MongoDB ObjectId
                 if (!mongoose.Types.ObjectId.isValid(id)) {
                     console.log('Invalid MongoDB ObjectId:', id);
                     return res.status(400).json({ error: 'Invalid booking ID format' });
                 }
                 
-                // Find and update the booking
-                const booking = await Booking.findByIdAndUpdate(
-                    id,
-                    { status: status },
-                    { new: true } // Return the updated document
-                ).populate('room', 'name');
+                // Find booking first to inspect hostel and current status
+                const booking = await Booking.findById(id).populate('room', 'name hostelId');
+                if (!booking) {
+                    console.log('Booking not found with id:', id);
+                    return res.status(404).json({ error: 'Booking not found' });
+                }
+
+                // Authorization: managers can do everything; volunteers limited
+                if (user.role !== 'manager') {
+                    // If user is volunteer, restrict allowed status transitions
+                    const allowedForVolunteer = ['checked-in', 'checked-out', 'no-show'];
+                    if (user.role === 'volunteer') {
+                        if (!allowedForVolunteer.includes(status)) {
+                            return res.status(403).json({ error: 'Volunteers cannot set this status.' });
+                        }
+                    } else {
+                        // other roles forbidden by default
+                        return res.status(403).json({ error: 'Forbidden.' });
+                    }
+                }
+
+                // Update the booking after authorization
+                booking.status = status;
+                await booking.save();
                 
                 if (!booking) {
                     console.log('Booking not found with id:', id);
