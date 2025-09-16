@@ -216,7 +216,7 @@ function Dashboard() {
             {/* Analytics Section */}
             <div className="analytics-section">
                 <h2 className="section-title">Analytics Overview</h2>
-                <BookingStats />
+                <BookingStats metrics={calculateMetrics()} />
             </div>
             
             <div className="analytics-section full-width" style={{ overflow: 'hidden' }}>
