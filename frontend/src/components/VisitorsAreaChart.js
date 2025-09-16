@@ -1,6 +1,6 @@
 import React from 'react';
 import { TrendingUp } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, ResponsiveContainer } from "recharts";
 
 import {
   Card,
@@ -17,14 +17,9 @@ import {
   ChartTooltipContent,
 } from "../components/ui/chart";
 
-// Data for the visitors chart
-const visitorsData = [
-  { month: "January", visitors: 186 },
-  { month: "February", visitors: 305 },
-  { month: "March", visitors: 237 },
-  { month: "April", visitors: 73 },
-  { month: "May", visitors: 209 },
-  { month: "June", visitors: 214 },
+// Helper to get month name from a Date
+const MONTHS = [
+  'January','February','March','April','May','June','July','August','September','October','November','December'
 ];
 
 // Chart configuration
@@ -35,41 +30,54 @@ const chartConfig = {
   },
 };
 
-export function VisitorsAreaChart() {
-  // Use responsive sizing
-  const [chartWidth, setChartWidth] = React.useState(window.innerWidth - 80); // Subtract padding
-  
-  // Update chart width when window resizes
-  React.useEffect(() => {
-    const handleResize = () => {
-      setChartWidth(window.innerWidth - 80);
-    };
-    
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-  
+export function VisitorsAreaChart({ bookings = [] }) {
+  // Aggregate bookings into visitors per month (last 12 months)
+  const now = new Date();
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ key: `${d.getFullYear()}-${d.getMonth() + 1}`, label: MONTHS[d.getMonth()], year: d.getFullYear(), month: d.getMonth() + 1 });
+  }
+
+  const visitorsMap = months.reduce((acc, m) => {
+    acc[m.key] = 0;
+    return acc;
+  }, {});
+
+  bookings.forEach(b => {
+    // Expect booking.checkInDate to be an ISO string or Date
+    const checkIn = b.checkInDate ? new Date(b.checkInDate) : null;
+    if (!checkIn || Number.isNaN(checkIn.getTime())) return;
+
+    const key = `${checkIn.getFullYear()}-${checkIn.getMonth() + 1}`;
+    if (visitorsMap[key] !== undefined) {
+      // Use persons if present, otherwise count as 1
+      visitorsMap[key] += (b.persons || 1);
+    }
+  });
+
+  const visitorsData = months.map(m => ({ month: m.label, visitors: visitorsMap[m.key] || 0 }));
+
   return (
     <Card className="w-full">
       <CardHeader>
         <CardTitle>Visitor Trends</CardTitle>
         <CardDescription>
-          Showing total visitors for the last 6 months
+          Showing visitors for the last 12 months
         </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <ChartContainer config={chartConfig}>
-          <AreaChart
-            data={visitorsData}
-            width={chartWidth}
-            height={350}
-            margin={{
-              top: 10,
-              right: 30,
-              left: 0,
-              bottom: 0,
-            }}
-          >
+          <ResponsiveContainer width="100%" height={360}>
+            <AreaChart
+              data={visitorsData}
+              margin={{
+                top: 10,
+                right: 30,
+                left: 0,
+                bottom: 0,
+              }}
+            >
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="month"
@@ -89,7 +97,8 @@ export function VisitorsAreaChart() {
               fill="#2563eb"
               fillOpacity={0.2}
             />
-          </AreaChart>
+            </AreaChart>
+          </ResponsiveContainer>
         </ChartContainer>
       </CardContent>
       <CardFooter>
