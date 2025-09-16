@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['manager','volunteer','owner','admin'], default: 'volunteer' },
   permissions: [String],
   hostelId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room' },
+  status: { type: String, enum: ['pending','active','cancelled'], default: 'pending' },
   refreshTokens: [String],
   createdAt: { type: Date, default: Date.now }
 });

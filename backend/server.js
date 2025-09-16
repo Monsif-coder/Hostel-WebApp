@@ -262,11 +262,14 @@ app.post('/auth/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Missing credentials' });
 
     try {
-        const user = await User.findOne({ email });
-        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    const user = await User.findOne({ email });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-        const match = await bcrypt.compare(password, user.passwordHash);
-        if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+    // Only active users can login
+    if (user.status !== 'active') return res.status(403).json({ error: 'Account not active' });
+
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
 
         const payload = { id: user._id, role: user.role, hostelId: user.hostelId };
         const accessToken = jwt.sign(payload, SECRET_KEY, { expiresIn: ACCESS_TOKEN_EXP });
@@ -281,6 +284,77 @@ app.post('/auth/login', async (req, res) => {
         return res.json({ accessToken, refreshToken, user: { id: user._id, role: user.role, hostelId: user.hostelId } });
     } catch (err) {
         return res.status(500).json({ error: err.message });
+    }
+});
+
+// Public registration endpoint - creates a pending volunteer
+app.post('/auth/register', async (req, res) => {
+    const { name, email, password, hostelId } = req.body;
+    if (!email || !password || !hostelId) return res.status(400).json({ error: 'Missing fields' });
+    try {
+        const existing = await User.findOne({ email });
+        if (existing) return res.status(409).json({ error: 'Email already registered' });
+        const hash = await bcrypt.hash(password, 10);
+        const user = new User({ name, email, passwordHash: hash, hostelId, role: 'volunteer', status: 'pending' });
+        await user.save();
+        // Notify manager via email or leave for manager UI to pick up
+        return res.status(201).json({ message: 'Registration successful. Awaiting manager approval.' });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Manager endpoints to list and approve/cancel pending accounts
+app.get('/auth/pending', async (req, res) => {
+    // require manager authentication
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token' });
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        if (decoded.role !== 'manager') return res.status(403).json({ error: 'Forbidden' });
+        const pending = await User.find({ status: 'pending', hostelId: decoded.hostelId }).select('-passwordHash -refreshTokens');
+        return res.json({ pending });
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+app.post('/auth/pending/:id/approve', async (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token' });
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        if (decoded.role !== 'manager') return res.status(403).json({ error: 'Forbidden' });
+        const { id } = req.params;
+        const user = await User.findById(id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.hostelId.toString() !== decoded.hostelId.toString()) return res.status(403).json({ error: 'Not your hostel' });
+        user.status = 'active';
+        await user.save();
+        return res.json({ message: 'User approved' });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
+});
+
+app.post('/auth/pending/:id/cancel', async (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token' });
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        if (decoded.role !== 'manager') return res.status(403).json({ error: 'Forbidden' });
+        const { id } = req.params;
+        const user = await User.findById(id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.hostelId.toString() !== decoded.hostelId.toString()) return res.status(403).json({ error: 'Not your hostel' });
+        user.status = 'cancelled';
+        await user.save();
+        return res.json({ message: 'User cancelled' });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
     }
 });
 
